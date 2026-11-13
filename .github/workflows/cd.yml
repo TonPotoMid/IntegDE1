@@ -1,0 +1,78 @@
+name: CD - build & déploiement
+
+on:
+  workflow_run:
+    workflows: ["CI - pipeline data"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build & push de l'image Docker (GHCR)
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push
+        run: |
+          IMAGE=ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          docker build -t $IMAGE:latest -t $IMAGE:${{ github.sha }} .
+          docker push $IMAGE:latest
+          docker push $IMAGE:${{ github.sha }}
+
+  smoke-prod:
+    name: Smoke test du setup de prod (docker compose --profile prod)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Démarrage S3 + DB + service de traitement planifié + Grafana
+        run: docker compose --profile prod up -d --build --wait
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+      - name: Dépôt des CSV dans le S3 (le service les traite tout seul)
+        run: |
+          python -m pipeline.main generate --output data
+          python -m pipeline.main upload --input data
+      - name: Attente du traitement planifié puis vérification
+        run: |
+          for i in $(seq 1 30); do
+            n=$(docker compose exec -T db psql -U pipeline -d transactions -tAc "SELECT count(*) FROM processed_files" 2>/dev/null || echo 0)
+            echo "fichiers traités: $n"; [ "$n" = "3" ] && break; sleep 5
+          done
+          pytest tests/integration/test_db_state.py -v
+      - if: failure()
+        run: docker compose --profile prod logs --tail 200
+
+  deploy-vm:
+    name: Déploiement sur VM (SSH)
+    needs: smoke-prod
+    runs-on: ubuntu-latest
+    env:
+      HAS_VM: ${{ secrets.VM_HOST != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip (secrets VM_HOST / VM_USER / VM_SSH_KEY non configurés)
+        if: env.HAS_VM != 'true'
+        run: echo "Pas de VM configurée, déploiement ignoré."
+      - name: Copie des fichiers et docker compose up
+        if: env.HAS_VM == 'true'
+        run: |
+          mkdir -p ~/.ssh && echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.VM_HOST }}" >> ~/.ssh/known_hosts
+          TARGET="${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}"
+          ssh "$TARGET" "mkdir -p ~/integde1"
+          scp -r docker-compose.yml grafana "$TARGET:~/integde1/"
+          ssh "$TARGET" "cd ~/integde1 && docker compose --profile prod pull && docker compose --profile prod up -d"

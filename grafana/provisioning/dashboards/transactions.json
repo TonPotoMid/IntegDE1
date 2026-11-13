@@ -1,0 +1,53 @@
+{
+  "uid": "transactions",
+  "title": "Transactions financières",
+  "schemaVersion": 39,
+  "time": { "from": "2026-10-31T00:00:00.000Z", "to": "2026-11-04T00:00:00.000Z" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Transactions", "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "transactions-pg" },
+      "targets": [{ "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+        "rawSql": "SELECT count(*) AS transactions FROM transactions" }]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Montant total", "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "transactions-pg" },
+      "fieldConfig": { "defaults": { "unit": "currencyEUR" }, "overrides": [] },
+      "targets": [{ "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+        "rawSql": "SELECT sum(montant) AS total FROM transactions" }]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Transactions flaggées (> 5000)", "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "transactions-pg" },
+      "targets": [{ "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+        "rawSql": "SELECT count(*) AS flagged FROM transactions WHERE is_flagged" }]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Fichiers traités", "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "transactions-pg" },
+      "targets": [{ "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+        "rawSql": "SELECT count(*) AS fichiers FROM processed_files" }]
+    },
+    {
+      "id": 5, "type": "barchart", "title": "Montants envoyés par banque", "gridPos": { "x": 0, "y": 4, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "transactions-pg" },
+      "fieldConfig": { "defaults": { "unit": "currencyEUR" }, "overrides": [] },
+      "targets": [{ "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+        "rawSql": "SELECT banque, total FROM sent_by_bank ORDER BY total DESC" }]
+    },
+    {
+      "id": 6, "type": "table", "title": "Envoyé / reçu par IBAN", "gridPos": { "x": 12, "y": 4, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "transactions-pg" },
+      "targets": [{ "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+        "rawSql": "SELECT coalesce(s.iban, r.iban) AS iban, coalesce(s.total, 0) AS envoye, coalesce(r.total, 0) AS recu FROM sent_by_iban s FULL JOIN received_by_iban r ON r.iban = s.iban ORDER BY 1" }]
+    },
+    {
+      "id": 7, "type": "table", "title": "Transactions flaggées", "gridPos": { "x": 0, "y": 13, "w": 24, "h": 8 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "transactions-pg" },
+      "targets": [{ "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+        "rawSql": "SELECT transaction_id, datetime_transaction, iban_origine, banque_source, iban_destinataire, pays_destinataire, montant FROM transactions WHERE is_flagged ORDER BY montant DESC" }]
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+name: integde1
+
+services:
+  s3:
+    image: chrislusf/seaweedfs:4.53
+    command: "server -dir=/data -s3 -s3.port=8333 -volume.max=5"
+    ports:
+      - "8333:8333"
+    volumes:
+      - s3-data:/data
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pipeline
+      POSTGRES_PASSWORD: pipeline
+      POSTGRES_DB: transactions
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pipeline -d transactions"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: ["dashboard", "prod"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Service de traitement (prod) : relance le traitement toutes les 60 s
+  pipeline:
+    build: .
+    image: ghcr.io/tonpotomid/integde1:latest
+    profiles: ["prod"]
+    command: ["python", "-m", "pipeline.main", "process", "--loop", "60"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://pipeline:pipeline@db:5432/transactions
+      S3_ENDPOINT: http://s3:8333
+    depends_on:
+      db:
+        condition: service_healthy
+      s3:
+        condition: service_started
+
+volumes:
+  s3-data:
+  db-data:
