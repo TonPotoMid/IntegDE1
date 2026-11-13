@@ -52,7 +52,7 @@ jobs:
 
       - name: 5. Traitement + insertion (avec un bug d'insertion simulé -> retry)
         env:
-          SIMULATE_INSERT_FAILURES: "2"
+          SIMULATE_INSERT_FAILURES: "99"
           SIMULATE_DOWNLOAD_FAILURES: "1"
         run: python -m pipeline.main process
 
