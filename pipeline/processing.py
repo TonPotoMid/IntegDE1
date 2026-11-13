@@ -33,7 +33,7 @@ def sum_received_by_iban(transactions: Iterable[Transaction]) -> dict[str, Decim
 
 def is_suspicious(transaction: Transaction, threshold: Decimal = FLAG_THRESHOLD) -> bool:
     """Une transaction est flaggée si son montant est STRICTEMENT au-dessus du seuil."""
-    return transaction.montant > threshold
+    return transaction.montant >= threshold
 
 
 def flag_transactions(
